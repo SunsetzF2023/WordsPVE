@@ -205,6 +205,7 @@ export class GameState {
     if (idx === -1) return;
     s.board.splice(idx, 1);
     this._addLog(`${card.char} 被消灭了`);
+    this._emit('fxDeath', { uid: card.uid });
     // 死亡效果
     if (card.onDeath) {
       const mutation = card.onDeath(this, card, who);
@@ -229,11 +230,15 @@ export class GameState {
       const { side, amount } = mut.heroShield;
       this.side(side).shield += amount;
       this._addLog(`${side === 'player' ? '你' : 'AI'} 获得 ${amount} 点护盾`);
+      const heroEl = side === 'player' ? 'player-portrait' : 'ai-portrait';
+      this._emit('fxShield', { heroElId: heroEl, amount });
     }
     if (mut.heroHeal) {
       const { side, amount } = mut.heroHeal;
       this._healHero(side, amount);
       this._addLog(`${side === 'player' ? '你' : 'AI'} 回复了 ${amount} 点生命`);
+      const heroEl = side === 'player' ? 'player-portrait' : 'ai-portrait';
+      this._emit('fxHeal', { heroElId: heroEl, amount });
     }
     if (mut.summon) {
       const tokenBase = BASE_CARDS.find(c => c.id === mut.summon.cardId);
@@ -307,6 +312,7 @@ export class GameState {
         const fused = makeCard({ ...fusion, onPlay: fusion.onPlay || null, onDeath: null });
         board.push(fused);
         this._addLog(`✨ 合体！【${fusion.char}】降临！`);
+        this._emit('fxFusion', { char: fusion.char });
         if (fused.onPlay) {
           const mutation = fused.onPlay(this, fused, who);
           this._applyMutation(mutation, who);
@@ -355,8 +361,15 @@ export class GameState {
     if (targetUid === 'hero') {
       // 攻击英雄
       if (taunters.length > 0) return { ok: false, msg: '敌方有嘲讽卡，必须先攻击嘲讽目标！' };
-      const dmg = this._calcDamage(atk);
+      const isCrit = atk.keywords.includes(KEYWORDS.CRIT) && Math.random() < 0.25;
+      const dmg = isCrit ? atk.attack * 2 : atk.attack;
+      if (isCrit) this._addLog(`💥 暴击！`);
       this._addLog(`${atk.char} 攻击敌方英雄，造成 ${dmg} 点伤害`);
+      // 发射特效事件
+      this._emit('fxAttack', {
+        attackerUid, targetUid: 'hero', targetIsHero: true,
+        damage: dmg, isCrit, keywords: atk.keywords,
+      });
       this._damageHero(this.oppName(who), dmg);
       if (atk.keywords.includes(KEYWORDS.DRAIN)) {
         const heal = Math.floor(dmg * 0.5);
@@ -378,10 +391,12 @@ export class GameState {
 
   _calcDamage(card) {
     let dmg = card.attack;
-    if (card.keywords.includes(KEYWORDS.CRIT) && Math.random() < 0.25) {
+    const isCrit = card.keywords.includes(KEYWORDS.CRIT) && Math.random() < 0.25;
+    if (isCrit) {
       dmg *= 2;
       this._addLog(`💥 暴击！`);
     }
+    card._lastCrit = isCrit;
     return dmg;
   }
 
@@ -392,7 +407,13 @@ export class GameState {
     for (let h = 0; h < hits; h++) {
       if (!this.side(oppSide).board.includes(def)) break;
       const dmg = this._calcDamage(atk);
+      const isCrit = atk._lastCrit;
       this._addLog(`${atk.char} 攻击 ${def.char}，造成 ${dmg} 点伤害${hits > 1 ? `（第 ${h+1} 击）` : ''}`);
+      // 特效事件
+      this._emit('fxAttack', {
+        attackerUid: atk.uid, targetUid: def.uid, targetIsHero: false,
+        damage: dmg, isCrit, keywords: atk.keywords,
+      });
       const dealt = this._damageCard(oppSide, def, dmg);
       // 穿透
       if (atk.keywords.includes(KEYWORDS.PIERCE) && dealt > 0) {

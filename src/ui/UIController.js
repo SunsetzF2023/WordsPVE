@@ -2,15 +2,6 @@
 //  src/ui/UIController.js  –  主界面控制器
 // ============================================================
 import { createCardElement, createCardBack } from './CardRenderer.js';
-import {
-  triggerAttackFX,
-  deathEffect,
-  fusionEffect,
-  healEffect,
-  shieldRipple,
-  floatText,
-  centerOf,
-} from './BattleEffects.js';
 
 export class UIController {
   constructor(gameState) {
@@ -75,40 +66,6 @@ export class UIController {
   _bindGameEvents() {
     document.addEventListener('game:stateChange', () => this.render());
     document.addEventListener('game:gameover',    (e) => this._showOverlay(e.detail.winner));
-
-    // ── 特效事件 ──
-    document.addEventListener('game:fxAttack', (e) => {
-      const { attackerUid, targetUid, targetIsHero, damage, isCrit, keywords } = e.detail;
-      triggerAttackFX({ attackerUid, targetUid, targetIsHero, damage, isCrit, keywords });
-    });
-
-    document.addEventListener('game:fxDeath', (e) => {
-      const el = document.querySelector(`[data-uid="${e.detail.uid}"]`);
-      if (el) deathEffect(el);
-    });
-
-    document.addEventListener('game:fxFusion', (e) => {
-      const x = window.innerWidth / 2;
-      const y = window.innerHeight / 2;
-      fusionEffect(x, y, e.detail.char);
-    });
-
-    document.addEventListener('game:fxHeal', (e) => {
-      const el = document.getElementById(e.detail.heroElId);
-      if (el) {
-        const r = el.getBoundingClientRect();
-        healEffect(r.left + r.width / 2, r.top + r.height / 2, e.detail.amount);
-      }
-    });
-
-    document.addEventListener('game:fxShield', (e) => {
-      const el = document.getElementById(e.detail.heroElId);
-      if (el) {
-        const r = el.getBoundingClientRect();
-        shieldRipple(r.left + r.width / 2, r.top + r.height / 2);
-        floatText(r.left + r.width / 2, r.top - 10, `🛡️+${e.detail.amount}`, '#4ea8ff');
-      }
-    });
   }
 
   _bindUIEvents() {
@@ -142,12 +99,6 @@ export class UIController {
     // 英雄信息
     this._renderHero('player', p);
     this._renderHero('ai', a);
-
-    // AI 英雄头像高亮（选中攻击者时）
-    const aiPortrait = document.getElementById('ai-portrait');
-    if (aiPortrait) {
-      aiPortrait.classList.toggle('hero--targetable', this.mode === 'selecting_target');
-    }
 
     // 场牌
     this._renderBoard('ai',     a.board);

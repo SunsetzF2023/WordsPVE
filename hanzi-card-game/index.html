@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>汉字战场 · HanziCard</title>
+  <link rel="stylesheet" href="assets/css/main.css">
+</head>
+<body>
+
+<div id="app">
+
+  <!-- ── 顶部栏 ── -->
+  <header id="header">
+    <div class="logo">汉字战场</div>
+    <div class="turn-info">
+      <span>回合 <span id="turn-num">1</span></span>
+      <span id="phase-label">你的回合</span>
+    </div>
+  </header>
+
+  <!-- ── 主战场 ── -->
+  <main id="field">
+
+    <!-- AI 区 -->
+    <section id="ai-area">
+      <!-- AI 手牌背面 -->
+      <div id="ai-hand"></div>
+
+      <!-- AI 英雄行 -->
+      <div class="hero-row" id="ai-hero-area">
+        <div class="hero-portrait" id="ai-portrait" title="点击攻击英雄">🤖</div>
+        <div class="hero-info">
+          <div class="hero-name">AI 英雄</div>
+          <div class="hp-bar-wrap">
+            <div class="hp-bar-bg">
+              <div class="hp-bar-fill" id="ai-hp-bar" style="width:100%;background:var(--red)"></div>
+            </div>
+            <div class="hp-text"><span id="ai-hp">40</span>/<span id="ai-max-hp">40</span></div>
+          </div>
+          <div class="hero-meta">
+            <span class="energy">⚡<span id="ai-energy">3</span>/<span id="ai-max-energy">3</span></span>
+            <span class="deck">🃏<span id="ai-deck-count">26</span></span>
+            <span class="shield" id="ai-shield">🛡️0</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- AI 场牌 -->
+      <div class="board" id="ai-board">
+        <div class="board-empty">敌方战场</div>
+      </div>
+    </section>
+
+    <!-- 分隔线 -->
+    <div id="divider"></div>
+
+    <!-- 玩家场地区 -->
+    <section id="player-area">
+      <!-- 玩家场牌 -->
+      <div class="board" id="player-board">
+        <div class="board-empty">我方战场（点击手牌出牌）</div>
+      </div>
+
+      <!-- 玩家英雄行 -->
+      <div class="hero-row">
+        <div class="hero-portrait" id="player-portrait">🧙</div>
+        <div class="hero-info">
+          <div class="hero-name">玩家英雄</div>
+          <div class="hp-bar-wrap">
+            <div class="hp-bar-bg">
+              <div class="hp-bar-fill" id="player-hp-bar" style="width:100%;background:var(--green)"></div>
+            </div>
+            <div class="hp-text"><span id="player-hp">40</span>/<span id="player-max-hp">40</span></div>
+          </div>
+          <div class="hero-meta">
+            <span class="energy">⚡<span id="player-energy">3</span>/<span id="player-max-energy">3</span></span>
+            <span class="deck">🃏<span id="player-deck-count">26</span></span>
+            <span class="shield" id="player-shield">🛡️0</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ── 手牌区 ── -->
+  <div id="hand-area">
+    <div class="hand-label">手牌</div>
+    <div id="player-hand"></div>
+  </div>
+
+  <!-- ── 侧边栏 ── -->
+  <aside id="sidebar">
+    <div class="sidebar-title">战斗日志</div>
+    <ul id="log-list"></ul>
+    <button id="btn-end-turn" class="btn">结束回合</button>
+    <button id="btn-restart"  class="btn btn--restart">重新开始</button>
+  </aside>
+
+</div><!-- /#app -->
+
+<!-- ── Tooltip ── -->
+<div id="tooltip"></div>
+
+<!-- ── Toast 通知 ── -->
+<div id="toast-area"></div>
+
+<!-- ── 游戏结束覆盖 ── -->
+<div id="game-overlay">
+  <div id="overlay-title">🎉 胜利！</div>
+  <div id="overlay-msg">你击败了 AI！</div>
+  <button id="btn-restart-overlay" class="btn" style="width:auto;padding:10px 28px;margin-top:8px;font-size:1rem;">再来一局</button>
+</div>
+
+<script type="module" src="src/main.js"></script>
+</body>
+</html>
