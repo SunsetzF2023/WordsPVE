@@ -442,9 +442,14 @@ export class GameState {
 
     // ────────────────────────────────────────────────
     //  ★ 炉石风格反击：目标对攻击方造成等额伤害 ★
+    //  修复：用 def.health > 0 判断，而非 board.includes
+    //  因为 _damageCard 会把死亡单位从 board 移除
+    //  但反击应与攻击"同时"结算，只要目标当时还活着
     // ────────────────────────────────────────────────
-    if (this.side(oppSide).board.includes(def) && this.side(who).board.includes(atk)) {
-      const retDmg = def.attack; // 反击用目标的完整攻击力
+    const defStillAlive = def.health > 0;
+    const atkStillAlive = this.side(who).board.includes(atk);
+    if (defStillAlive && atkStillAlive) {
+      const retDmg = def.attack;
       if (retDmg > 0) {
         this._addLog(`↩️ ${def.char} 反击 ${atk.char}，造成 ${retDmg} 点伤害`);
         this._emit('fxAttack', {
@@ -452,14 +457,12 @@ export class GameState {
           damage: retDmg, isCrit: false, keywords: def.keywords, isCounter: true,
         });
         const retDealt = this._damageCard(who, atk, retDmg);
-        // 反击方的穿透也生效
         if (def.keywords.includes(KEYWORDS.PIERCE) && retDealt > 0) {
           const rp = Math.ceil(retDealt * 0.5);
           this._damageHero(who, rp);
           this._addLog(`🔱 ${def.char} 反击穿透！对 ${this.displayName(who)} 英雄造成 ${rp} 点伤害`);
         }
-        // 反击方的吸血
-        if (def.keywords.includes(KEYWORDS.DRAIN) && retDealt > 0 && this.side(oppSide).board.includes(def)) {
+        if (def.keywords.includes(KEYWORDS.DRAIN) && retDealt > 0) {
           const rh = Math.floor(retDealt * 0.5);
           def.health = Math.min(def.health + rh, def.maxHealth);
         }
