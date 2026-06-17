@@ -1,13 +1,14 @@
 // ============================================================
 //  src/engine/GameState.js  –  游戏核心引擎 v3
 // ============================================================
-import { BASE_CARDS, FUSION_CARDS, AI_DECK_PRESET, KEYWORDS, SUITS, RANKS, AI_HERO_NAMES } from '../../data/cards.js';
+import { BASE_CARDS, FUSION_CARDS, AI_DECK_PRESET, KEYWORDS, SUITS, RANKS, AI_HERO_NAMES, ENERGY_CONFIG, UNLOCK_CARDS } from '../../data/cards.js';
+import { loadProgress, recordGame } from './PlayerProgress.js';
 
 const BOARD_LIMIT   = 6;
 const MAX_HP        = 40;
 const HAND_LIMIT    = 8;
-const MAX_ENERGY    = 10;
 const DRAW_PER_TURN = 2;
+// 能量从 cards.js 的 ENERGY_CONFIG 读取
 
 let UID_COUNTER = 0;
 const uid = () => `c${++UID_COUNTER}`;
@@ -52,7 +53,7 @@ function buildDeck(cardIds) {
   const pool   = [];
   const allIds = shuffleArray([...cardIds, ...cardIds]);
   allIds.forEach(id => {
-    const base = BASE_CARDS.find(c => c.id === id);
+    const base = [...BASE_CARDS, ...UNLOCK_CARDS].find(c => c.id === id);
     if (!base || base.isToken) return;
     pool.push(makeCard(base, SUITS[rand(SUITS.length)], RANKS[rand(RANKS.length)]));
   });
@@ -61,7 +62,11 @@ function buildDeck(cardIds) {
 
 function buildPlayerDeck() {
   const ids = BASE_CARDS.filter(c => !c.isToken).map(c => c.id);
-  return buildDeck(shuffleArray(ids).slice(0, 18));
+  // 加入已解锁的特殊卡
+  const progress = loadProgress();
+  const unlockIds = progress.unlockedCards || [];
+  const allIds = [...ids, ...unlockIds];
+  return buildDeck(shuffleArray(allIds).slice(0, 20));
 }
 
 function buildAIDeck() { return buildDeck(AI_DECK_PRESET); }
@@ -78,8 +83,10 @@ export class GameState {
     this.log       = [];
     this.aiName    = AI_HERO_NAMES[rand(AI_HERO_NAMES.length)];
 
-    this.player = { hp: MAX_HP, maxHp: MAX_HP, shield: 0, energy: 3, maxEnergy: 3, deck: buildPlayerDeck(), hand: [], board: [] };
-    this.ai     = { hp: MAX_HP, maxHp: MAX_HP, shield: 0, energy: 3, maxEnergy: 3, deck: buildAIDeck(),    hand: [], board: [] };
+    const SE = ENERGY_CONFIG.startEnergy;
+    const SM = ENERGY_CONFIG.startMax;
+    this.player = { hp: MAX_HP, maxHp: MAX_HP, shield: 0, energy: SE, maxEnergy: SM, invincibleTurns: 0, deck: buildPlayerDeck(), hand: [], board: [] };
+    this.ai     = { hp: MAX_HP, maxHp: MAX_HP, shield: 0, energy: SE, maxEnergy: SM, invincibleTurns: 0, deck: buildAIDeck(),    hand: [], board: [] };
 
     for (let i = 0; i < 4; i++) this._draw('player');
     for (let i = 0; i < 4; i++) this._draw('ai');
@@ -116,6 +123,11 @@ export class GameState {
   // ── 英雄伤害 / 回血 ──
   _damageHero(who, amount) {
     const s   = this.side(who);
+    // 无敌状态：免疫所有伤害
+    if (s.invincibleTurns > 0) {
+      this._addLog(`✨ ${this.displayName(who)} 处于无敌状态，伤害免疫！`);
+      return;
+    }
     let   dmg = Math.max(0, amount);
     if (s.shield > 0) { const ab = Math.min(s.shield, dmg); s.shield -= ab; dmg -= ab; }
     s.hp = clamp(s.hp - dmg, 0, s.maxHp);
@@ -131,7 +143,11 @@ export class GameState {
     this.phase  = 'gameover';
     this.winner = winner;
     this._addLog(winner === 'player' ? '🎉 你赢了！' : `💀 ${this.aiName} 获胜！`);
-    this._emit('gameover', { winner });
+    // 记录战绩并检查解锁
+    const { progress, newlyUnlocked } = recordGame(winner === 'player');
+    this.progress       = progress;
+    this.newlyUnlocked  = newlyUnlocked;
+    this._emit('gameover', { winner, progress, newlyUnlocked });
   }
 
   // ══════════════════════════════════════════════════════════
@@ -220,6 +236,53 @@ export class GameState {
         target.keywords = target.keywords.filter(k => k !== KEYWORDS.DIVINE && k !== KEYWORDS.ARMOR);
         this._addLog(`反制！击碎了 ${target.char} 的护甲/神圣护盾`);
       }
+    }
+
+    // ── 解锁卡专属 mutation ──
+
+    // 全场 AOE（自爆 / 神威）
+    if (mut.aoeEnemy) {
+      const { side: targetSide, damage } = mut.aoeEnemy;
+      const board = this.side(targetSide).board.slice();
+      board.forEach(c => {
+        this._damageCard(targetSide, c, damage);
+      });
+      this._addLog(`💥 AOE！对敌方全体造成 ${damage} 点伤害`);
+    }
+
+    // 友方全体 buff（军令）
+    if (mut.buffAllies) {
+      const { side: buffSide, atk, hp } = mut.buffAllies;
+      // 不包括刚出场的这张牌（最后一个），对其余所有友方buff
+      const board = this.side(buffSide).board;
+      board.slice(0, -1).forEach(c => {
+        c.attack    += atk;
+        c.health    += hp;
+        c.maxHealth += hp;
+      });
+      this._addLog(`📯 军令！友方所有单位 +${atk}/+${hp}`);
+    }
+
+    // 召唤多个 token（伏兵）
+    if (mut.summonMulti) {
+      const { side: sumSide, cardId, count } = mut.summonMulti;
+      const base = [...BASE_CARDS, ...UNLOCK_CARDS].find(c => c.id === cardId);
+      if (base) {
+        for (let i = 0; i < count; i++) {
+          if (this.side(sumSide).board.length < BOARD_LIMIT) {
+            this.side(sumSide).board.push(makeCard(base));
+          }
+        }
+        this._addLog(`🪖 伏兵！召唤了 ${count} 个 ${base.char}`);
+      }
+    }
+
+    // 英雄无敌（无敌卡）
+    if (mut.heroInvincible) {
+      const { side: invSide, turns } = mut.heroInvincible;
+      this.side(invSide).invincibleTurns = (this.side(invSide).invincibleTurns || 0) + turns;
+      this._addLog(`🛡️ ${this.displayName(invSide)} 本回合免疫所有伤害！`);
+      this._emit('fxShield', { heroElId: invSide === 'player' ? 'player-portrait' : 'ai-portrait', amount: '∞' });
     }
   }
 
@@ -486,6 +549,10 @@ export class GameState {
     if (this.phase !== who) return;
     this._addLog(`${this.displayName(who)} 结束回合`);
 
+    // 无敌回合递减
+    const ws = this.side(who);
+    if (ws.invincibleTurns > 0) { ws.invincibleTurns--; }
+
     // DoT 结算
     [...this.side(who).board].forEach(c => {
       if (c.burnStacks   > 0) { this._damageCard(who, c, 1); c.burnStacks--;   }
@@ -495,7 +562,7 @@ export class GameState {
     const next = this.oppName(who);
     this.phase = next;
     const ns   = this.side(next);
-    ns.maxEnergy = Math.min(MAX_ENERGY, ns.maxEnergy + 1);
+    ns.maxEnergy = Math.min(ENERGY_CONFIG.hardCap, ns.maxEnergy + ENERGY_CONFIG.gainPerTurn);
     ns.energy    = ns.maxEnergy;
     if (next === 'player') this.turn++;
 
