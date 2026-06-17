@@ -659,3 +659,46 @@ body {
   }
   .card__char { font-size: 1.3rem; }
 }
+
+/* ── v2 新增样式 ── */
+
+/* 已攻击（消耗）状态 */
+.card--exhausted {
+  opacity: 0.55;
+  filter: saturate(0.4);
+}
+.card--exhausted::after {
+  content: '已攻击';
+  position: absolute;
+  bottom: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 0.48rem;
+  color: var(--gray);
+  font-family: var(--font-mono);
+  pointer-events: none;
+}
+
+/* 急袭标记闪烁 */
+.si { font-size: 0.58rem; margin: 0 1px; }
+
+/* AI 英雄名字颜色 */
+#ai-name { color: var(--red); }
+
+/* 反击浮字颜色（绿色） */
+.fx-counter { color: #a0ffa0; }
+
+/* 手牌数量角标 */
+.hand-count-badge {
+  position: absolute;
+  top: -6px; right: -6px;
+  background: var(--gold);
+  color: #1a1000;
+  border-radius: 50%;
+  width: 16px; height: 16px;
+  font-size: 0.6rem;
+  font-weight: bold;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
