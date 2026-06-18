@@ -161,6 +161,22 @@ export class UIController {
     if (en)    en.textContent    = s.energy;
     if (maxEn) maxEn.textContent = s.maxEnergy;
     if (deck)  deck.textContent  = s.deck.length;
+
+    // 英雄 DoT 状态图标
+    const dotElId = `${who}-hero-dot`;
+    let dotEl = document.getElementById(dotElId);
+    if (!dotEl) {
+      dotEl = document.createElement('div');
+      dotEl.id = dotElId;
+      dotEl.style.cssText = 'font-size:0.65rem;display:flex;gap:4px;margin-top:2px;';
+      const infoEl = document.querySelector(`#${who === 'player' ? 'player' : 'ai'}-area .hero-info`);
+      if (infoEl) infoEl.appendChild(dotEl);
+    }
+    let dotHtml = '';
+    if (s.burnStacks   > 0) dotHtml += `<span title="灼烧">🔥×${s.burnStacks}</span>`;
+    if (s.poisonStacks > 0) dotHtml += `<span title="中毒">☠️×${s.poisonStacks}</span>`;
+    if (s.invincibleTurns > 0) dotHtml += `<span title="无敌">✨无敌</span>`;
+    dotEl.innerHTML = dotHtml;
   }
 
   _renderBoard(who, board) {

@@ -61,12 +61,14 @@ function buildDeck(cardIds) {
 }
 
 function buildPlayerDeck() {
-  const ids = BASE_CARDS.filter(c => !c.isToken).map(c => c.id);
-  // 加入已解锁的特殊卡
-  const progress = loadProgress();
-  const unlockIds = progress.unlockedCards || [];
-  const allIds = [...ids, ...unlockIds];
-  return buildDeck(shuffleArray(allIds).slice(0, 20));
+  const progress   = loadProgress();
+  const unlockIds  = progress.unlockedCards || [];
+  // 普通卡随机抽取
+  const normalIds  = BASE_CARDS.filter(c => !c.isToken).map(c => c.id);
+  const pickedNormal = shuffleArray(normalIds).slice(0, 18);
+  // 解锁卡全部保留（不参与 slice），确保一定能抽到
+  const allIds = [...pickedNormal, ...unlockIds];
+  return buildDeck(allIds);
 }
 
 function buildAIDeck() { return buildDeck(AI_DECK_PRESET); }
@@ -85,8 +87,8 @@ export class GameState {
 
     const SE = ENERGY_CONFIG.startEnergy;
     const SM = ENERGY_CONFIG.startMax;
-    this.player = { hp: MAX_HP, maxHp: MAX_HP, shield: 0, energy: SE, maxEnergy: SM, invincibleTurns: 0, deck: buildPlayerDeck(), hand: [], board: [] };
-    this.ai     = { hp: MAX_HP, maxHp: MAX_HP, shield: 0, energy: SE, maxEnergy: SM, invincibleTurns: 0, deck: buildAIDeck(),    hand: [], board: [] };
+    this.player = { hp: MAX_HP, maxHp: MAX_HP, shield: 0, energy: SE, maxEnergy: SM, invincibleTurns: 0, burnStacks: 0, poisonStacks: 0, deck: buildPlayerDeck(), hand: [], board: [] };
+    this.ai     = { hp: MAX_HP, maxHp: MAX_HP, shield: 0, energy: SE, maxEnergy: SM, invincibleTurns: 0, burnStacks: 0, poisonStacks: 0, deck: buildAIDeck(),    hand: [], board: [] };
 
     for (let i = 0; i < 4; i++) this._draw('player');
     for (let i = 0; i < 4; i++) this._draw('ai');
@@ -417,6 +419,16 @@ export class GameState {
     this._addLog(`${atk.char} 攻击 ${this.displayName(this.oppName(who))} 英雄，造成 ${dmg} 点伤害`);
     this._emit('fxAttack', { attackerUid: atk.uid, targetUid: 'hero', targetIsHero: true, damage: dmg, isCrit, keywords: atk.keywords });
     this._damageHero(this.oppName(who), dmg);
+    // 攻击英雄也可以施加灼烧/毒
+    const oppHero = this.opp(who);
+    if (atk.keywords.includes(KEYWORDS.BURN) && oppHero.burnStacks < 3) {
+      oppHero.burnStacks = 3;
+      this._addLog(`🔥 ${this.displayName(this.oppName(who))} 英雄被灼烧！`);
+    }
+    if (atk.keywords.includes(KEYWORDS.POISON) && oppHero.poisonStacks < 3) {
+      oppHero.poisonStacks = 3;
+      this._addLog(`☠️ ${this.displayName(this.oppName(who))} 英雄被中毒！`);
+    }
     if (atk.keywords.includes(KEYWORDS.DRAIN) && this.side(who).board.includes(atk)) {
       const heal = Math.floor(dmg * 0.5);
       atk.health = Math.min(atk.health + heal, atk.maxHealth);
@@ -549,16 +561,11 @@ export class GameState {
     if (this.phase !== who) return;
     this._addLog(`${this.displayName(who)} 结束回合`);
 
-    // 无敌回合递减
+    // 无敌回合递减（在本回合结束时减）
     const ws = this.side(who);
     if (ws.invincibleTurns > 0) { ws.invincibleTurns--; }
 
-    // DoT 结算
-    [...this.side(who).board].forEach(c => {
-      if (c.burnStacks   > 0) { this._damageCard(who, c, 1); c.burnStacks--;   }
-      if (c.poisonStacks > 0) { this._damageCard(who, c, 2); c.poisonStacks--; }
-    });
-
+    // ── 切换到下一回合 ──
     const next = this.oppName(who);
     this.phase = next;
     const ns   = this.side(next);
@@ -570,14 +577,47 @@ export class GameState {
     this._draw(next, DRAW_PER_TURN);
     this._addLog(`══ ${next === 'player' ? '你的' : this.aiName + ' 的'}回合（第${this.turn}回合）══`);
 
-    // 回合开始 DoT
-    [...this.side(next).board].forEach(c => {
-      if (c.burnStacks   > 0) { this._damageCard(next, c, 1); c.burnStacks--;   }
-      if (c.poisonStacks > 0) { this._damageCard(next, c, 2); c.poisonStacks--; }
-    });
+    // ── 回合开始：DoT 结算（每回合只触发一次，在这里）──
+    // Bug 修复：原来回合结束+回合开始各结算一次，导致每回合扣两次血/掉两层
+    // 正确：只在新回合开始时统一结算，层数-1
+    this._applyDoT(next);
+
+    // ── 英雄 DoT（毒/灼烧也可以施加在英雄身上）──
+    this._applyHeroDoT(next);
 
     this._emit('stateChange');
     if (next === 'ai') setTimeout(() => this._aiTurn(), 900);
+  }
+
+  // ── 卡牌 DoT 结算（每回合开始调用一次）──
+  _applyDoT(who) {
+    [...this.side(who).board].forEach(c => {
+      if (c.burnStacks > 0) {
+        this._damageCard(who, c, 1);
+        c.burnStacks--;
+        this._addLog(`🔥 ${c.char} 灼烧伤害 1 点（剩余${c.burnStacks}层）`);
+      }
+      if (c.poisonStacks > 0) {
+        this._damageCard(who, c, 2);
+        c.poisonStacks--;
+        this._addLog(`☠️ ${c.char} 中毒伤害 2 点（剩余${c.poisonStacks}层）`);
+      }
+    });
+  }
+
+  // ── 英雄 DoT 结算（英雄也可以中毒/灼烧）──
+  _applyHeroDoT(who) {
+    const s = this.side(who);
+    if (s.burnStacks > 0) {
+      this._addLog(`🔥 ${this.displayName(who)} 英雄灼烧伤害 1 点（剩余${s.burnStacks - 1}层）`);
+      this._damageHero(who, 1);
+      s.burnStacks--;
+    }
+    if (s.poisonStacks > 0) {
+      this._addLog(`☠️ ${this.displayName(who)} 英雄中毒伤害 2 点（剩余${s.poisonStacks - 1}层）`);
+      this._damageHero(who, 2);
+      s.poisonStacks--;
+    }
   }
 
   // ── AI ──
